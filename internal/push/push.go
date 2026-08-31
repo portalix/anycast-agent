@@ -16,7 +16,9 @@ import (
 	"github.com/portalix/anycast-agent/internal/agg"
 )
 
-const Version = "0.1.0"
+// Version is stamped by the release build (goreleaser, -X); source builds
+// identify themselves as dev.
+var Version = "0.0.0-dev"
 
 type Payload struct {
 	Agent   string       `json:"agent"`

@@ -49,7 +49,11 @@ Example record:
  "af":"v4","proto":"UDP","qtype":"A","client_prefix":"203.0.113.0/24","count":42}
 ```
 
-## Build & run
+## Install & run
+
+Prebuilt static binaries (Linux amd64/arm64, FreeBSD amd64) with checksums
+are on the [releases page](https://github.com/portalix/anycast-agent/releases)
+— or build from source:
 
 ```sh
 go build ./cmd/anycast-agent

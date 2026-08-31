@@ -1,0 +1,37 @@
+# Release builds: git tag v* → GitHub release with static binaries and
+# checksums. Targets cover the platforms authoritative DNS actually runs
+# on; more on request.
+version: 2
+
+builds:
+  - main: ./cmd/anycast-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: freebsd
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/portalix/anycast-agent/internal/push.Version={{.Version}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+      - config.example.yaml
+      - systemd/anycast-agent.service
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
