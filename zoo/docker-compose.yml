@@ -1,0 +1,79 @@
+# Docker zoo: 5 dnstap dialects (Knot, NSD, BIND, dnsdist/PowerDNS,
+# Unbound) against the agent. All producers connect as Frame Streams
+# clients to the sockets the agent creates in the shared volume.
+#
+#   docker compose up -d --build
+#   docker compose logs -f agent      # minute sums as JSON lines
+#   docker compose restart knot       # reconnect test
+name: anycast-zoo
+
+services:
+  agent:
+    build: ..
+    volumes:
+      - dnstap:/dnstap
+      - ./agent/config.yaml:/etc/anycast-agent/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "test", "-S", "/dnstap/knot.sock", "-a", "-S", "/dnstap/nsd.sock", "-a", "-S", "/dnstap/bind.sock", "-a", "-S", "/dnstap/dnsdist.sock", "-a", "-S", "/dnstap/unbound.sock"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  knot:
+    build: ./knot
+    volumes:
+      - dnstap:/dnstap
+      - ./zones:/zones:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  nsd:
+    build: ./nsd
+    volumes:
+      - dnstap:/dnstap
+      - ./zones:/zones:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  bind:
+    build: ./bind
+    volumes:
+      - dnstap:/dnstap
+      - ./zones:/zones:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  pdns:
+    build: ./pdns
+    volumes:
+      - dnstap:/dnstap
+      - ./zones:/zones:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  unbound:
+    build: ./unbound
+    volumes:
+      - dnstap:/dnstap
+      - ./zones:/zones:ro
+    depends_on:
+      agent:
+        condition: service_healthy
+
+  trafficgen:
+    build: ./trafficgen
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - knot
+      - nsd
+      - bind
+      - pdns
+      - unbound
+
+volumes:
+  dnstap:

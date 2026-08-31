@@ -1,0 +1,23 @@
+[Unit]
+Description=anycast.dev agent (dnstap minute aggregation)
+Documentation=https://anycast.dev
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/anycast-agent -config /etc/anycast-agent/config.yaml
+Restart=always
+RestartSec=2
+User=anycast-agent
+Group=anycast-agent
+# The socket lives in /run/anycast-agent/ (0750); let the nameserver user
+# reach the 0660 socket via the anycast-agent group.
+RuntimeDirectory=anycast-agent
+RuntimeDirectoryMode=0750
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+# anycast-agent v0 — example config (production node)
+#
+# The agent listens as a Frame Streams server; the nameserver connects as
+# a client. ONLY minute sums leave the server (minute, node, type, address
+# family, protocol, QTYPE, client /24 resp. /48) — never query names,
+# never full client IPs.
+
+# Empty = the nameserver's dnstap identity (recommended; dnsdist: the name
+# passed to DnstapLogAction, Knot/BIND/NSD/Unbound: identity/server-id).
+node_id: ""
+
+# prefix = client dimension as /24 (v4) resp. /48 (v6); none = no client
+# dimension at all. ASN/geo are derived centrally during enrichment.
+granularity: prefix
+
+inputs:
+  - socket: /run/anycast-agent/dnstap.sock
+    # Add the nameserver user to the anycast-agent group (0660);
+    # 0666 only if group management is not an option.
+    mode: "0660"
+
+push:
+  url: ""            # empty = JSON lines on stdout; else your ingest endpoint
+  token: ""          # optional: Authorization: Bearer <token>
+  interval_seconds: 60
+  timeout_seconds: 5
+
+# Frame buffer reader→aggregator; full = drop, never block.
+queue_size: 8192

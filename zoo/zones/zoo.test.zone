@@ -1,0 +1,17 @@
+$ORIGIN zoo.test.
+$TTL 300
+@	IN SOA	ns1.zoo.test. hostmaster.zoo.test. (
+		2026082601 ; serial
+		3600       ; refresh
+		900        ; retry
+		604800     ; expire
+		300 )      ; minimum
+@	IN NS	ns1.zoo.test.
+ns1	IN A	192.0.2.1
+@	IN A	192.0.2.10
+@	IN AAAA	2001:db8::10
+www	IN A	192.0.2.11
+www	IN AAAA	2001:db8::11
+txt	IN TXT	"anycast zoo"
+mx	IN MX	10 mail.zoo.test.
+mail	IN A	192.0.2.12

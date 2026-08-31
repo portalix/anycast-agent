@@ -1,0 +1,14 @@
+# Agent config for the zoo: all five dialects on one agent,
+# push to stdout (JSON lines), 15 s tick for fast feedback.
+node_id: ""
+granularity: prefix
+inputs:
+  - socket: /dnstap/knot.sock
+  - socket: /dnstap/nsd.sock
+  - socket: /dnstap/bind.sock
+  - socket: /dnstap/dnsdist.sock
+  - socket: /dnstap/unbound.sock
+push:
+  url: ""
+  interval_seconds: 15
+queue_size: 8192
