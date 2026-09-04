@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,9 @@ var (
 	// Upper bound of spooled payloads replayed per tick, so a large spool
 	// cannot stall a single tick; the rest follows on the next ticks.
 	maxReplayPerTick = 200
+	// Clock (var so tests can freeze it: the spool order must not depend
+	// on it).
+	now = time.Now
 )
 
 type Payload struct {
@@ -46,6 +50,7 @@ type Pusher struct {
 	client   *http.Client
 	spoolDir string // empty = spooling disabled
 	spoolMax int64  // bytes
+	seq      uint64 // next spool file number; monotonic, survives restarts
 	// Failed counts records that were lost for good (no spool, or dropped
 	// from a full spool). Spooled is the number of payloads currently
 	// waiting in the spool.
@@ -64,10 +69,16 @@ func New(url, token string, timeout time.Duration, spoolDir string, spoolMaxMB i
 	}
 	p.spoolDir = spoolDir
 	p.spoolMax = int64(spoolMaxMB) * 1024 * 1024
-	// A restart must not lose what an earlier run spooled.
+	// A restart must not lose what an earlier run spooled, and must not
+	// reuse its sequence numbers either.
 	if names, err := p.spoolFiles(); err == nil {
 		p.Spooled = len(names)
 		if p.Spooled > 0 {
+			for _, n := range names {
+				if s := seqOf(n) + 1; s > p.seq {
+					p.seq = s
+				}
+			}
 			log.Printf("push: %d spooled payloads from an earlier run", p.Spooled)
 		}
 	}
@@ -166,18 +177,15 @@ func (p *Pusher) replaySpool() bool {
 	return p.Spooled == 0
 }
 
-// writeSpool stores one payload as <unix-ms>.json (tmp + rename, so a
-// crash never leaves a half-written file behind) and enforces the cap.
+// writeSpool stores one payload as <seq>-<unix-ms>.json (tmp + rename, so
+// a crash never leaves a half-written file behind) and enforces the cap.
+// The sequence number — not the clock — orders the spool: it only ever
+// counts up, so a name is never reused after a replay removed a file, and
+// two payloads written in the same millisecond keep their order. The
+// millisecond is there for the operator reading the directory.
 func (p *Pusher) writeSpool(body []byte) error {
-	ms := time.Now().UnixMilli()
-	var path string
-	for {
-		path = filepath.Join(p.spoolDir, fmt.Sprintf("%013d.json", ms))
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			break
-		}
-		ms++ // same millisecond twice: keep the name unique and ordered
-	}
+	path := filepath.Join(p.spoolDir, fmt.Sprintf("%020d-%d.json", p.seq, now().UnixMilli()))
+	p.seq++
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, body, 0o640); err != nil {
 		return err
@@ -241,7 +249,8 @@ func (p *Pusher) enforceSpoolCap() {
 }
 
 // spoolFiles returns the spooled payload names, oldest first. The names
-// are zero-padded milliseconds, so lexical order is time order.
+// start with a zero-padded sequence number, so lexical order is write
+// order.
 func (p *Pusher) spoolFiles() ([]string, error) {
 	entries, err := os.ReadDir(p.spoolDir)
 	if err != nil {
@@ -255,6 +264,20 @@ func (p *Pusher) spoolFiles() ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// seqOf reads the sequence number a spool file name starts with; an
+// unparsable name counts as 0 and simply does not raise the counter.
+func seqOf(name string) uint64 {
+	digits := strings.TrimSuffix(name, ".json")
+	if i := strings.IndexByte(digits, '-'); i >= 0 {
+		digits = digits[:i]
+	}
+	n, err := strconv.ParseUint(digits, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // recordCount counts the records of a stored payload without decoding them.

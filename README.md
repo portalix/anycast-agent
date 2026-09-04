@@ -59,8 +59,10 @@ counted, as before). Set it — with the systemd unit,
   full the oldest payloads are dropped, counted (`push_failed`) and
   logged — the backpressure rule holds here too: never buffer without
   bound.
-- Files are written tmp + rename, so a crash leaves no half-written
-  payload; a restart picks up what the previous run spooled.
+- Files are named `<sequence>-<unix-ms>.json` and written tmp + rename, so
+  a crash leaves no half-written payload. The sequence number — not the
+  clock — defines the replay order and continues where the previous run
+  left off, so a restart picks up the spool without reordering it.
 
 Example record:
 

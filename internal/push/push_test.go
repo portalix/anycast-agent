@@ -56,6 +56,20 @@ func (i *ingest) payloads(t *testing.T) []Payload {
 	return out
 }
 
+// assertMinutes checks which minutes the ingest accepted, and in which order.
+func assertMinutes(t *testing.T, in *ingest, want ...string) {
+	t.Helper()
+	got := in.payloads(t)
+	if len(got) != len(want) {
+		t.Fatalf("ingest got %d payloads, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].Records[0].Minute != w {
+			t.Errorf("payload %d = %s, want %s", i, got[i].Records[0].Minute, w)
+		}
+	}
+}
+
 func rec(minute string) []agg.Record {
 	return []agg.Record{{Minute: minute, Node: "ns1", MsgType: "AUTH_QUERY", Count: 1}}
 }
@@ -73,11 +87,16 @@ func spoolNames(t *testing.T, dir string) []string {
 	return names
 }
 
+// newTestPusher shortens the retry delay and freezes the clock: with every
+// payload landing in the same millisecond, only the sequence number can
+// carry the spool order.
 func newTestPusher(t *testing.T, url, dir string) *Pusher {
 	t.Helper()
-	old := retryDelay
+	oldDelay, oldNow := retryDelay, now
 	retryDelay = time.Millisecond
-	t.Cleanup(func() { retryDelay = old })
+	frozen := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+	now = func() time.Time { return frozen }
+	t.Cleanup(func() { retryDelay, now = oldDelay, oldNow })
 	return New(url, "", 2*time.Second, dir, 50)
 }
 
@@ -117,16 +136,8 @@ func TestSpoolReplayOrder(t *testing.T) {
 	in.setDown(false)
 	p.Push(rec("2026-09-04T10:02:00Z"))
 
+	assertMinutes(t, in, "2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z", "2026-09-04T10:02:00Z")
 	got := in.payloads(t)
-	if len(got) != 3 {
-		t.Fatalf("ingest got %d payloads, want 3", len(got))
-	}
-	want := []string{"2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z", "2026-09-04T10:02:00Z"}
-	for i, w := range want {
-		if got[i].Records[0].Minute != w {
-			t.Errorf("payload %d = %s, want %s", i, got[i].Records[0].Minute, w)
-		}
-	}
 	if got[0].SentAt != spooled.SentAt {
 		t.Errorf("sent_at rewritten on replay: %s, want %s", got[0].SentAt, spooled.SentAt)
 	}
@@ -167,16 +178,7 @@ func TestCurrentBatchWaitsForSpool(t *testing.T) {
 
 	p.Push(nil) // a quiet minute still drains the spool
 	p.Push(nil)
-	got = in.payloads(t)
-	want := []string{"2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z", "2026-09-04T10:02:00Z"}
-	if len(got) != len(want) {
-		t.Fatalf("ingest got %d payloads, want %d", len(got), len(want))
-	}
-	for i, w := range want {
-		if got[i].Records[0].Minute != w {
-			t.Errorf("payload %d = %s, want %s", i, got[i].Records[0].Minute, w)
-		}
-	}
+	assertMinutes(t, in, "2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z", "2026-09-04T10:02:00Z")
 	if p.Spooled != 0 {
 		t.Errorf("Spooled=%d, want 0", p.Spooled)
 	}
@@ -244,14 +246,48 @@ func TestRestartReadsSpool(t *testing.T) {
 	if second.Spooled != 2 {
 		t.Fatalf("Spooled=%d after restart, want 2", second.Spooled)
 	}
-	in.setDown(false)
+	// The new run must continue the sequence, not overwrite or overtake
+	// what the old one left behind.
 	second.Push(rec("2026-09-04T10:02:00Z"))
-	got := in.payloads(t)
-	if len(got) != 3 {
-		t.Fatalf("ingest got %d payloads after restart, want 3", len(got))
+	if second.Spooled != 3 {
+		t.Fatalf("Spooled=%d, want 3", second.Spooled)
 	}
-	if got[0].Records[0].Minute != "2026-09-04T10:00:00Z" {
-		t.Errorf("first replayed payload = %s, want 10:00", got[0].Records[0].Minute)
+	in.setDown(false)
+	second.Push(rec("2026-09-04T10:03:00Z"))
+	assertMinutes(t, in, "2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z",
+		"2026-09-04T10:02:00Z", "2026-09-04T10:03:00Z")
+}
+
+// Spool file names are never reused: after a replay removed the oldest
+// file, the next payload must still sort behind the remaining ones — even
+// when everything happens within the same millisecond (the clock alone is
+// not a valid order).
+func TestSpoolNamesKeepWriteOrder(t *testing.T) {
+	in := &ingest{down: true}
+	srv := httptest.NewServer(in)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	p := newTestPusher(t, srv.URL, dir)
+	p.Push(rec("2026-09-04T10:00:00Z"))
+	p.Push(rec("2026-09-04T10:01:00Z"))
+	p.Push(rec("2026-09-04T10:02:00Z"))
+
+	old := maxReplayPerTick
+	maxReplayPerTick = 1
+	in.setDown(false)
+	p.Push(nil) // frees the oldest name
+	maxReplayPerTick = old
+
+	in.setDown(true)
+	p.Push(rec("2026-09-04T10:03:00Z"))
+	in.setDown(false)
+	p.Push(rec("2026-09-04T10:04:00Z"))
+
+	assertMinutes(t, in, "2026-09-04T10:00:00Z", "2026-09-04T10:01:00Z",
+		"2026-09-04T10:02:00Z", "2026-09-04T10:03:00Z", "2026-09-04T10:04:00Z")
+	if p.Spooled != 0 {
+		t.Errorf("Spooled=%d, want 0", p.Spooled)
 	}
 }
 
