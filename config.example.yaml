@@ -24,6 +24,14 @@ push:
   token: ""          # optional: Authorization: Bearer <token>
   interval_seconds: 60
   timeout_seconds: 5
+  # Buffer for pushes the ingest did not accept: one file per minute
+  # payload, replayed oldest first before the next push. Empty = off
+  # (failed pushes are dropped). With the systemd unit's StateDirectory:
+  # /var/lib/anycast-agent/spool
+  spool_dir: ""
+  # Cap for spool_dir in MB (default 50). Full = the oldest payloads are
+  # dropped and counted; the agent never buffers without bound.
+  spool_max_mb: 50
 
 # Frame buffer reader→aggregator; full = drop, never block.
 queue_size: 8192

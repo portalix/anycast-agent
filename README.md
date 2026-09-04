@@ -41,6 +41,26 @@ dimension.
   stdout (empty).
 - Node ID = the producer's dnstap identity; can be overridden via
   `node_id`.
+- A push the ingest does not accept is retried once and then written to
+  `push.spool_dir` (one file per minute payload) if one is configured, so
+  an ingest outage or an agent restart does not lose minutes.
+
+### Spool
+
+`push.spool_dir` is empty by default (failed pushes are dropped and
+counted, as before). Set it — with the systemd unit,
+`/var/lib/anycast-agent/spool` — and the agent buffers instead:
+
+- Each tick replays the spooled payloads oldest first (at most 200 per
+  tick) and only sends the current minute once the spool is empty, so the
+  ingest sees the minutes in order. The stored body is posted verbatim:
+  its `sent_at` still shows when the minute was originally due.
+- The spool is capped by `push.spool_max_mb` (default 50). When it is
+  full the oldest payloads are dropped, counted (`push_failed`) and
+  logged — the backpressure rule holds here too: never buffer without
+  bound.
+- Files are written tmp + rename, so a crash leaves no half-written
+  payload; a restart picks up what the previous run spooled.
 
 Example record:
 

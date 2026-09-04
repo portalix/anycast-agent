@@ -14,6 +14,9 @@ Group=anycast-agent
 # reach the 0660 socket via the anycast-agent group.
 RuntimeDirectory=anycast-agent
 RuntimeDirectoryMode=0750
+# /var/lib/anycast-agent/ for push.spool_dir (buffer for failed pushes).
+StateDirectory=anycast-agent
+StateDirectoryMode=0750
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

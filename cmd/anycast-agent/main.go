@@ -46,7 +46,8 @@ func main() {
 	}()
 
 	p := push.New(cfg.Push.URL, cfg.Push.Token,
-		time.Duration(cfg.Push.TimeoutSeconds)*time.Second)
+		time.Duration(cfg.Push.TimeoutSeconds)*time.Second,
+		cfg.Push.SpoolDir, cfg.Push.SpoolMaxMB)
 
 	interval := time.Duration(cfg.Push.IntervalSeconds) * time.Second
 	ticker := time.NewTicker(interval)
@@ -67,8 +68,8 @@ func main() {
 				cutoff -= 60
 			}
 			p.Push(a.FlushBefore(cutoff))
-			log.Printf("stats: received=%d dropped=%d push_failed=%d",
-				stats.Received.Load(), stats.Dropped.Load(), p.Failed)
+			log.Printf("stats: received=%d dropped=%d push_failed=%d spooled=%d",
+				stats.Received.Load(), stats.Dropped.Load(), p.Failed, p.Spooled)
 		case s := <-sig:
 			log.Printf("%v: flushing and shutting down", s)
 			p.Push(a.FlushBefore(1 << 62))

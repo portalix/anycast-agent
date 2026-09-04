@@ -25,6 +25,13 @@ type Push struct {
 	TimeoutSeconds  int `yaml:"timeout_seconds"`
 	// Optional bearer token (header Authorization: Bearer …).
 	Token string `yaml:"token"`
+	// Directory for payloads a push could not deliver; they are replayed
+	// on the following ticks. Empty = no spool (failed pushes are
+	// dropped, as before).
+	SpoolDir string `yaml:"spool_dir"`
+	// Cap for the spool directory in MB (default 50). When it is full the
+	// oldest payloads are dropped — never buffer without bound.
+	SpoolMaxMB int `yaml:"spool_max_mb"`
 }
 
 type Config struct {
@@ -68,6 +75,9 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Push.TimeoutSeconds <= 0 {
 		c.Push.TimeoutSeconds = 5
+	}
+	if c.Push.SpoolMaxMB <= 0 {
+		c.Push.SpoolMaxMB = 50
 	}
 	for i := range c.Inputs {
 		if c.Inputs[i].Mode == "" {
